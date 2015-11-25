@@ -55,7 +55,7 @@ public class mkhf {
 
         HashFile2Builder hf = new HashFile2Builder(isAssociative, outFile,
                 expectedElements, keySize, valueSize, isLongHash,
-                isLargeCapacity, isLargeFile, false);
+                isLargeCapacity, isLargeFile, false, false);
 
         log.info("adding...");
 
