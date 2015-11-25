@@ -63,7 +63,7 @@ public class RigorousHashFile2Test extends RigorousHashFileTestBase<HashEntry> {
                 try {
                     return new HashFile2Builder(isAssociative, tmp.toString(),
                             entries, keySize, valueSize, isLongHash,
-                            isLargeCapacity, isLargeFile, false);
+                            isLargeCapacity, isLargeFile, false, false);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }

@@ -44,7 +44,7 @@ public class TestHashFile2 {
 
         HashFile2Builder hashWrite = new HashFile2Builder(false,
                 tmp.getAbsolutePath(), 8, keySize, valueSize, longHash, false,
-                false, false);
+                false, false, false);
 
         writeElements(hashWrite, 10000, 0L, "key", "data");
 

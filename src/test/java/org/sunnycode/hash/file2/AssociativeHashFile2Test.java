@@ -57,7 +57,7 @@ public class AssociativeHashFile2Test extends
                 try {
                     return new HashFile2Builder(isAssociative, tmp.toString(),
                             entries, ByteSize.ZERO, valueSize, isLongHash,
-                            isLargeCapacity, isLargeFile, false);
+                            isLargeCapacity, isLargeFile, false, false);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
