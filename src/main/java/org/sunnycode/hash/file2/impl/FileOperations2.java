@@ -63,6 +63,8 @@ public class FileOperations2 {
 
   private final boolean isUuid;
 
+  private final boolean isPrimitive;
+
   private final int hashSizeBytes;
 
   private final int positionSizeBytes;
@@ -73,7 +75,7 @@ public class FileOperations2 {
 
   protected FileOperations2(Header2 header, int bucketPower, int buckets, ByteSize keySize,
       ByteSize valueSize, boolean isLongHash, boolean isLargeCapacity, boolean isLargeFile,
-      boolean isUuid) {
+      boolean isUuid, boolean isPrimitive) {
     this.header = header;
     this.bucketPower = bucketPower;
     this.buckets = buckets;
@@ -84,6 +86,7 @@ public class FileOperations2 {
     this.isLargeCapacity = isLargeCapacity;
     this.isLargeFile = isLargeFile;
     this.isUuid = isUuid;
+    this.isPrimitive = isPrimitive;
 
     this.hashSizeBytes = isLongHash ? 8 : 4;
     this.positionSizeBytes = isLargeFile ? 8 : 4;
@@ -95,7 +98,7 @@ public class FileOperations2 {
   public static FileOperations2 fromHeader(Header2 header) {
     return new FileOperations2(header, header.getBucketPower(), header.getBuckets(),
         header.getKeySize(), header.getValueSize(), header.isLongHash(), header.isLargeCapacity(),
-        header.isLargeFile(), header.isUuid());
+        header.isLargeFile(), header.isUuid(), header.isPrimitive());
   }
 
   public void finish(long dataFilePosition, String dataFilePath, DataOutputStream dataFile,
@@ -160,14 +163,15 @@ public class FileOperations2 {
     if (header.isFinished()) {
       throw new IllegalStateException("cannot add() to a finished hashFile");
     }
-
     this.header.incrementElementCount();
 
-    if (!isAssociative) {
+    if (!isPrimitive && !isAssociative) {
       write(dataFile, keySize, key.length);
     }
 
-    write(dataFile, valueSize, value.length);
+    if (!isPrimitive) {
+      write(dataFile, valueSize, value.length);
+    }
 
     if (!isAssociative) {
       dataFile.write(key);
@@ -175,13 +179,36 @@ public class FileOperations2 {
 
     dataFile.write(value);
 
-    int paddingSize =
-        isAssociative ? writePadding(dataFile, valueSize, value) : writePadding(dataFile, keySize,
-            valueSize, key, value);
+    int paddingSize = 0;
 
-    long bytesWritten = (long) valueSize.getSize() + (long) value.length + (long) paddingSize;
-    if (!isAssociative) {
-      bytesWritten += (long) keySize.getSize() + (long) key.length;
+    if (isPrimitive) {
+      if (isAssociative) {
+        paddingSize = writePadding(dataFile, ByteSize.ZERO, ByteSize.ZERO, 0, valueSize.getSize());
+      } else {
+        paddingSize =
+            writePadding(dataFile, ByteSize.ZERO, ByteSize.ZERO, keySize.getSize(),
+                valueSize.getSize());
+      }
+    } else {
+      if (isAssociative) {
+        paddingSize = writePadding(dataFile, keySize, valueSize, 0, value.length);
+      } else {
+        paddingSize = writePadding(dataFile, keySize, valueSize, key.length, value.length);
+      }
+    }
+
+    long bytesWritten = 0;
+
+    if (isPrimitive) {
+      bytesWritten = (long) valueSize.getSize() + (long) paddingSize;
+      if (!isAssociative) {
+        bytesWritten += (long) keySize.getSize();
+      }
+    } else {
+      bytesWritten = (long) valueSize.getSize() + (long) value.length + (long) paddingSize;
+      if (!isAssociative) {
+        bytesWritten += (long) keySize.getSize() + (long) key.length;
+      }
     }
 
     return advanceBytes(pos, bytesWritten, isLargeFile);
@@ -204,16 +231,32 @@ public class FileOperations2 {
   public HashEntry readHashEntry(final DataInputStream input, final AtomicLong pos) {
     try {
       int keyLength = 0;
-      if (!isAssociative) {
-        keyLength = (int) read(input, header.getKeySize());
-        pos.addAndGet(header.getKeySize().getSize());
+      if (isPrimitive) {
+        if (!isAssociative) {
+          keyLength = header.getKeySize().getSize();
+        } else {
+          // associative - keylength is always zero
+        }
+      } else {
+        if (!isAssociative) {
+          keyLength = (int) read(input, header.getKeySize());
+          pos.addAndGet(header.getKeySize().getSize());
+        } else {
+          // associative - keylength is always zero
+        }
       }
 
-      int dataLength = (int) read(input, header.getValueSize());
-      pos.addAndGet(header.getValueSize().getSize());
+      int dataLength = 0;
+
+      if (isPrimitive) {
+        dataLength = header.getValueSize().getSize();
+      } else {
+        dataLength = (int) read(input, header.getValueSize());
+        pos.addAndGet(header.getValueSize().getSize());
+      }
 
       byte[] key = new byte[0];
-      if (!header.isAssociative()) {
+      if (keyLength > 0) {
         key = new byte[keyLength];
         input.readFully(key);
         pos.addAndGet(keyLength);
@@ -223,8 +266,14 @@ public class FileOperations2 {
       input.readFully(data);
       pos.addAndGet(dataLength);
 
-      int padding =
-          4 - ((header.getKeySize().getSize() + header.getValueSize().getSize() + keyLength + dataLength) % 4);
+      int padding = 0;
+      if (isPrimitive) {
+        padding = 4 - ((keyLength + dataLength) % 4);
+      } else {
+        padding =
+            4 - ((header.getKeySize().getSize() + header.getValueSize().getSize() + keyLength + dataLength) % 4);
+      }
+
       if (padding == 4) {
         padding = 0;
       }
@@ -322,7 +371,8 @@ public class FileOperations2 {
           continue;
         }
 
-        long dataLength = read(fileBytes, valueSize, keySize.getSize());
+        long dataLength =
+            !isPrimitive ? read(fileBytes, valueSize, keySize.getSize()) : valueSize.getSize();
 
         byte[] probedKey = new byte[(int) keyLength];
         byte[] data = new byte[(int) dataLength];
@@ -371,7 +421,7 @@ public class FileOperations2 {
 
     return Iterators2.getMultiIterable(alignment, hashFile, hashTableOffsets, bucketPower,
         slotSize, keySize, valueSize, isAssociative, isLongHash, isLargeCapacity, isLargeFile,
-        isUuid, key);
+        isUuid, isPrimitive, key);
   }
 
   private long getHashTablePosition(ByteBuffer bucketData, int slotIndex) {
@@ -387,25 +437,15 @@ public class FileOperations2 {
   }
 
   private static int writePadding(DataOutputStream dataFile, ByteSize keySize, ByteSize valueSize,
-      byte[] key, byte[] data) throws IOException {
-    int paddingSize =
-        4 - ((keySize.getSize() + valueSize.getSize() + key.length + data.length) % 4);
+      int keyLen, int valueLen) throws IOException {
+    int paddingSize = 4 - ((keySize.getSize() + valueSize.getSize() + keyLen + valueLen) % 4);
+
     paddingSize = (paddingSize < 4) ? paddingSize : 0;
 
     if (paddingSize > 0) {
       dataFile.write(new byte[paddingSize]);
     }
-    return paddingSize;
-  }
 
-  private static int writePadding(DataOutputStream dataFile, ByteSize valueSize, byte[] data)
-      throws IOException {
-    int paddingSize = 4 - ((valueSize.getSize() + data.length) % 4);
-    paddingSize = (paddingSize < 4) ? paddingSize : 0;
-
-    if (paddingSize > 0) {
-      dataFile.write(new byte[paddingSize]);
-    }
     return paddingSize;
   }
 
@@ -430,7 +470,7 @@ public class FileOperations2 {
        * 128MM * 256 = 32BN); this is a property of ByteBuffer only being able to allocate 2GB
        */
       if (radixFileLength > Integer.MAX_VALUE) {
-        throw new RuntimeException("radix file too huge");
+        throw new RuntimeException("radix file too huge (" + radixFileLength + ")");
       }
 
       int entries = (int) radixFileLength / longPointerSize;
@@ -438,67 +478,68 @@ public class FileOperations2 {
         continue;
       }
 
-      final DataInputStream radixFileLongs =
+      try (final DataInputStream radixFileLongs =
           new DataInputStream(new BufferedInputStream(new FileInputStream(radixFile),
-              SEQUENTIAL_READ_BUFFER_SIZE));
+              SEQUENTIAL_READ_BUFFER_SIZE))) {
 
-      ByteBuffer hashTableBytes = ByteBuffer.allocate((int) radixFileLength);
+        ByteBuffer hashTableBytes = ByteBuffer.allocate((int) radixFileLength);
 
-      for (int j = 0; j < entries; j++) {
-        long hashCode = isLongHash ? radixFileLongs.readLong() : radixFileLongs.readInt();
-        long position = isLargeFile ? radixFileLongs.readLong() : radixFileLongs.readInt();
+        for (int j = 0; j < entries; j++) {
+          long hashCode = isLongHash ? radixFileLongs.readLong() : radixFileLongs.readInt();
+          long position = isLargeFile ? radixFileLongs.readLong() : radixFileLongs.readInt();
 
-        int slot = Calculations2.getBucket(hashCode, bucketPower);
-        int baseSlot = Calculations2.getBaseBucketForHash(hashCode, bucketPower);
+          int slot = Calculations2.getBucket(hashCode, bucketPower);
+          int baseSlot = Calculations2.getBaseBucketForHash(hashCode, bucketPower);
 
-        int bucketStartIndex = (int) bucketStarts[slot];
-        int baseBucketStart = (int) bucketStarts[baseSlot];
-        int relativeBucketStartOffset = (int) (bucketStartIndex - baseBucketStart);
-        int bucketCount = (int) bucketCounts[slot];
+          int bucketStartIndex = (int) bucketStarts[slot];
+          int baseBucketStart = (int) bucketStarts[baseSlot];
+          int relativeBucketStartOffset = (int) (bucketStartIndex - baseBucketStart);
+          int bucketCount = (int) bucketCounts[slot];
 
-        int hashProbe = (int) (Math.abs(hashCode) % bucketCount);
-        int slotIndexPos = relativeBucketStartOffset + hashProbe;
+          int hashProbe = (int) (Math.abs(hashCode) % bucketCount);
+          int slotIndexPos = relativeBucketStartOffset + hashProbe;
 
-        boolean finished = false;
-        int trials = 0;
-        while (!finished && trials < bucketCount) {
-          trials += 1;
-          hashTableBytes.rewind();
+          boolean finished = false;
+          int trials = 0;
+          while (!finished && trials < bucketCount) {
+            trials += 1;
+            hashTableBytes.rewind();
 
-          int probedHashCodeIndex = (slotIndexPos * longPointerSize);
-          int probedPositionIndex = probedHashCodeIndex + hashSizeBytes;
+            int probedHashCodeIndex = (slotIndexPos * longPointerSize);
+            int probedPositionIndex = probedHashCodeIndex + hashSizeBytes;
 
-          long probedPosition =
-              isLargeCapacity ? hashTableBytes.getLong(probedPositionIndex) : hashTableBytes
-                  .getInt(probedPositionIndex);
+            long probedPosition =
+                isLargeCapacity ? hashTableBytes.getLong(probedPositionIndex) : hashTableBytes
+                    .getInt(probedPositionIndex);
 
-          if (probedPosition == 0) {
-            if (isLongHash) {
-              hashTableBytes.putLong(probedHashCodeIndex, hashCode);
+            if (probedPosition == 0) {
+              if (isLongHash) {
+                hashTableBytes.putLong(probedHashCodeIndex, hashCode);
+              } else {
+                hashTableBytes.putInt(probedHashCodeIndex, (int) hashCode);
+              }
+
+              if (isLargeFile) {
+                hashTableBytes.putLong(probedPositionIndex, position);
+              } else {
+                hashTableBytes.putInt(probedPositionIndex, (int) position);
+              }
+              finished = true;
             } else {
-              hashTableBytes.putInt(probedHashCodeIndex, (int) hashCode);
-            }
+              if (bucketCount == 1) {
+                throw new RuntimeException("shouldn't happen: collision in bucket of size 1!");
+              }
 
-            if (isLargeFile) {
-              hashTableBytes.putLong(probedPositionIndex, position);
-            } else {
-              hashTableBytes.putInt(probedPositionIndex, (int) position);
-            }
-            finished = true;
-          } else {
-            if (bucketCount == 1) {
-              throw new RuntimeException("shouldn't happen: collision in bucket of size 1!");
-            }
-
-            slotIndexPos += 1;
-            if (slotIndexPos >= (relativeBucketStartOffset + bucketCount)) {
-              slotIndexPos = relativeBucketStartOffset;
+              slotIndexPos += 1;
+              if (slotIndexPos >= (relativeBucketStartOffset + bucketCount)) {
+                slotIndexPos = relativeBucketStartOffset;
+              }
             }
           }
         }
-      }
 
-      hashTableFile.write(hashTableBytes.array());
+        hashTableFile.write(hashTableBytes.array());
+      }
     }
   }
 
