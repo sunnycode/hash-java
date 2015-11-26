@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.sunnycode.hash</groupId>
   <artifactId>hash-java</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.3.0-SNAPSHOT</version>
 
   <scm>
     <connection>scm:git:git@github.com:sunnycode/hash-java.git</connection>
