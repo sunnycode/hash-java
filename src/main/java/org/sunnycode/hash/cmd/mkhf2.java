@@ -1,4 +1,5 @@
 package org.sunnycode.hash.cmd;
+
 /**
  * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
  * agreements. See the NOTICE file distributed with this work for additional information regarding
@@ -44,7 +45,7 @@ public class mkhf2 {
     String delim = System.getProperty("delim", "\t");
 
     ByteSize keySize = ByteSize.valueOf(System.getProperty("keySize", "ZERO"));
-    ByteSize valueSize = ByteSize.valueOf(System.getProperty("valueSize", "FOUR"));
+    ByteSize valueSize = ByteSize.valueOf(System.getProperty("valueSize", "EIGHT"));
 
     boolean isAssociative = Boolean.valueOf(System.getProperty("isAssociative", "true"));
     boolean isLongHash = Boolean.valueOf(System.getProperty("isLongHash", "true"));
@@ -68,7 +69,7 @@ public class mkhf2 {
     final LongBuffer longbuf = lconvert.asLongBuffer();
 
     final Set<Long> already = new HashSet<Long>();
-    
+
     long j = 0;
     for (String file : theArgs) {
       long i = 0;
@@ -80,17 +81,17 @@ public class mkhf2 {
           String[] v = n.split(delim);
 
           if (v.length == 3) {
-            int valueInt = Integer.parseInt(v[1]);
-            byte[] value = getIntBytes(iconvert, intbuf, valueInt);
+            long valueLong = Long.parseLong(v[1]);
+            byte[] value = getLongBytes(lconvert, longbuf, valueLong);
 
             Long hashVal = murmur2.getLongHashCode(v[2].getBytes("UTF-8"));
             byte[] key = getLongBytes(lconvert, longbuf, hashVal);
-            
+
             if (!already.contains(hashVal)) {
               hf.add(key, value);
               already.add(hashVal);
             } else {
-              log.fine("ALREADY line : " + n);  
+              log.fine("ALREADY line : " + n);
             }
           } else {
             log.fine("BAD line : " + n);
