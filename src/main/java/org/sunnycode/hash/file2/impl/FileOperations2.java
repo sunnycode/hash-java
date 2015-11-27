@@ -145,7 +145,7 @@ public class FileOperations2 {
     long hashValue = Calculations2.computeHash(key, isLongHash, isUuid);
 
     int radix = Calculations2.getRadix(hashValue, bucketPower);
-    int bucket = Calculations2.getBucket(hashValue, bucketPower);
+    int bucket = Calculations2.getInnerSlot(hashValue, bucketPower);
 
     write(hashCodeList[radix], isLongHash ? ByteSize.EIGHT : ByteSize.FOUR, hashValue);
 
@@ -313,7 +313,7 @@ public class FileOperations2 {
 
     long currentHashCode = Calculations2.computeHash(key, isLongHash, isUuid);
 
-    int innerSlot = Calculations2.getBucket(currentHashCode, bucketPower);
+    int innerSlot = Calculations2.getInnerSlot(currentHashCode, bucketPower);
     int innerSlotBase = innerSlot * slotSize;
 
     long innerSlotBasePosition =
@@ -455,7 +455,7 @@ public class FileOperations2 {
   /** Writes out a merged hash table file from all of the radix files */
   private void writeHashTable(String radixFilePrefix, long[] bucketStarts, long[] bucketCounts,
       DataOutput hashTableFile) throws IOException {
-    int longPointerSize = Calculations2.getHashTableEntrySize(isLongHash, isLargeFile);
+    int hashEntrySize = Calculations2.getHashTableEntrySize(isLongHash, isLargeFile);
 
     for (int i = 0; i < Calculations2.RADIX_FILE_COUNT; i++) {
       File radixFile = new File(getRadixFileName(radixFilePrefix, i));
@@ -469,7 +469,7 @@ public class FileOperations2 {
         throw new RuntimeException("radix file too huge (" + radixFileLength + ")");
       }
 
-      int entries = (int) radixFileLength / longPointerSize;
+      int entries = (int) radixFileLength / hashEntrySize;
 
       if (entries < 1) {
         continue;
@@ -481,7 +481,7 @@ public class FileOperations2 {
 
         ByteBuffer hashTableBytes = ByteBuffer.allocate((int) radixFileLength);
 
-        populateHashTable(bucketStarts, bucketCounts, longPointerSize, entries, radixFileLongs,
+        populateHashTable(bucketStarts, bucketCounts, hashEntrySize, entries, radixFileLongs,
             hashTableBytes);
 
         hashTableFile.write(hashTableBytes.array());
@@ -495,35 +495,31 @@ public class FileOperations2 {
     // for each hash table entry
     for (int j = 0; j < entries; j++) {
       // read the 4-byte or 8-byte hash code
-      long hashCode = isLongHash ? radixFileLongs.readLong() : radixFileLongs.readInt();
+      final long hashCode = isLongHash ? radixFileLongs.readLong() : radixFileLongs.readInt();
       // read the 4-byte or 8-byte long file offset
-      long position = isLargeFile ? radixFileLongs.readLong() : radixFileLongs.readInt();
+      final long position = isLargeFile ? radixFileLongs.readLong() : radixFileLongs.readInt();
 
-      int outerSlot = Calculations2.getBucket(hashCode, bucketPower);
-      int innerSlot = Calculations2.getBaseBucketForHash(hashCode, bucketPower);
+      final int outerSlot = Calculations2.getOuterSlot(hashCode, bucketPower);
+      final int innerSlot = Calculations2.getInnerSlot(hashCode, bucketPower);
 
-      int outerSlotStart = (int) bucketStarts[outerSlot];
-      int innerSlotStart = (int) bucketStarts[innerSlot];
-      int relativeInnerSlotStart = (int) (outerSlotStart - innerSlotStart);
-      int innerSlotSize = (int) bucketCounts[innerSlot];
+      final int outerSlotStart = (int) bucketStarts[outerSlot];
+      final int innerSlotStart = (int) bucketStarts[innerSlot];
+      final int relativeInnerSlotStart = (int) (innerSlotStart - outerSlotStart);
+      final int innerSlotSize = (int) bucketCounts[innerSlot];
+      final int innerSlotHashProbe = (int) (Math.abs(hashCode) % innerSlotSize);
 
-
-      int innerSlotHashProbe = (int) (Math.abs(hashCode) % innerSlotSize);
       int innerSlotHashIndex = relativeInnerSlotStart + innerSlotHashProbe;
-
       boolean finished = false;
       int trials = 0;
 
       while (!finished && trials < innerSlotSize) {
         trials += 1;
-        int probedHashCodeIndex = (innerSlotHashIndex * longPointerSize);
-        int probedPositionIndex = probedHashCodeIndex + hashSizeBytes;
 
-        hashTableBytes.position(0);
+        int probedHashCodeIndex = (innerSlotHashIndex * longPointerSize);
 
         long hashCodeAlreadyAtProbePosition =
-            isLargeCapacity ? hashTableBytes.getLong(probedPositionIndex) : hashTableBytes
-                .getInt(probedPositionIndex);
+            isLargeCapacity ? hashTableBytes.getLong(probedHashCodeIndex) : hashTableBytes
+                .getInt(probedHashCodeIndex);
 
         boolean notCollision = (hashCodeAlreadyAtProbePosition == 0);
 
@@ -533,6 +529,8 @@ public class FileOperations2 {
           } else {
             hashTableBytes.putInt(probedHashCodeIndex, (int) hashCode);
           }
+
+          final int probedPositionIndex = probedHashCodeIndex + hashSizeBytes;
 
           if (isLargeFile) {
             hashTableBytes.putLong(probedPositionIndex, position);

@@ -129,7 +129,7 @@ public class Iterators2 {
       final boolean isLargeFile, final boolean isUuid, final boolean isPrimitive, final byte[] key) {
     final long currentHashCode = Calculations2.computeHash(key, isLongHash, isUuid);
 
-    int innerSlot = Calculations2.getBucket(currentHashCode, bucketPower);
+    int innerSlot = Calculations2.getInnerSlot(currentHashCode, bucketPower);
     int innerSlotBase = innerSlot * slotSize;
 
     final long innerSlotBasePosition =
