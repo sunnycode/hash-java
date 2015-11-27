@@ -53,9 +53,9 @@ public class Calculations2 {
 
   /**
    * Returns the power-of-two number of buckets recommended for the specified number of elements. If
-   * the specified number of elements is zero or less, we use 24 as the bucket power (corresponding
-   * to 16MM buckets). Otherwise the value is the log base 2 of the ceiling power of 2 minus 6
-   * (corresponding to at most 64 items per bucket). This value is then truncated between the
+   * the specified number of elements is zero or less, we use 8 as the bucket power (corresponding
+   * to 256 buckets). Otherwise the value is ((log base 2 of the ceiling power of 2) - 6), which
+   * corresponds to at most 64 items per bucket on average. This value is then truncated between the
    * maximum and minumum values of 28 and 8.
    */
   public static int getBucketPower(long expectedElements) {
