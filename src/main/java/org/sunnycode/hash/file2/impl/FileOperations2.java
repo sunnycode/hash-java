@@ -516,9 +516,10 @@ public class FileOperations2 {
 
       while (!finished && trials < innerSlotSize) {
         trials += 1;
-
         int probedHashCodeIndex = (innerSlotHashIndex * longPointerSize);
         int probedPositionIndex = probedHashCodeIndex + hashSizeBytes;
+
+        hashTableBytes.position(0);
 
         long hashCodeAlreadyAtProbePosition =
             isLargeCapacity ? hashTableBytes.getLong(probedPositionIndex) : hashTableBytes
