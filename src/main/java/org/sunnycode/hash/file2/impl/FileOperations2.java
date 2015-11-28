@@ -405,9 +405,19 @@ public class FileOperations2 {
             valueSize.getSize() + (!isPrimitive ? (int) dataLength : 0)
                 + (isAssociative ? 0 : keySize.getSize() + (int) keyLength);
 
+        int toGet = 0;
+
+        if (!isAssociative && !isPrimitive) {
+          toGet += keySize.getSize();
+        }
+
+        if (!isPrimitive) {
+          toGet += valueSize.getSize();
+        }
+
         if (entrySize < RANDOM_READ_BUFFER_LENGTH) {
           // if the hash entry fits in our buffer, things are faster
-          fileBytes.position(keySize.getSize() + (!isPrimitive ? valueSize.getSize() : 0));
+          fileBytes.position(toGet);
           fileBytes.get(probedKey);
 
           if (!isAssociative && !Arrays.equals(key, probedKey)) {
@@ -419,8 +429,7 @@ public class FileOperations2 {
         } else {
           // if the hash entry doesn't fit in our buffer, read it from the file
           synchronized (hashFile) {
-            hashFile.seek(entryPositionAlreadyAtProbeLocation + keySize.getSize()
-                + (!isPrimitive ? valueSize.getSize() : 0));
+            hashFile.seek(entryPositionAlreadyAtProbeLocation + toGet);
             hashFile.readFully(probedKey);
 
             if (!isAssociative && !Arrays.equals(key, probedKey)) {
