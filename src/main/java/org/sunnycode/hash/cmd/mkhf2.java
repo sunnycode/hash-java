@@ -18,7 +18,6 @@ package org.sunnycode.hash.cmd;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -52,9 +51,6 @@ public class mkhf2 {
     boolean isLargeCapacity = Boolean.valueOf(System.getProperty("isLargeCapacity", "true"));
     boolean isLargeFile = Boolean.valueOf(System.getProperty("isLargeFile", "true"));
 
-    // TODO : add bloom filter for keys
-    // TODO : try with long hash
-
     LongHash murmur2 = new MurmurHash();
 
     HashFile2Builder hf =
@@ -63,10 +59,10 @@ public class mkhf2 {
 
     log.info("adding...");
 
-    final ByteBuffer iconvert = ByteBuffer.allocate(4);
-    final IntBuffer intbuf = iconvert.asIntBuffer();
-    final ByteBuffer lconvert = ByteBuffer.allocate(8);
-    final LongBuffer longbuf = lconvert.asLongBuffer();
+    final ByteBuffer klconvert = ByteBuffer.allocate(8);
+    final LongBuffer klongbuf = klconvert.asLongBuffer();
+    final ByteBuffer vlconvert = ByteBuffer.allocate(8);
+    final LongBuffer vlongbuf = vlconvert.asLongBuffer();
 
     final Set<Long> already = new HashSet<Long>();
 
@@ -82,10 +78,12 @@ public class mkhf2 {
 
           if (v.length == 3) {
             long valueLong = Long.parseLong(v[1]);
-            byte[] value = getLongBytes(lconvert, longbuf, valueLong);
+            setLongBytes(vlconvert, vlongbuf, valueLong);
+            byte[] value = vlconvert.array();
 
             Long hashVal = murmur2.getLongHashCode(v[2].getBytes("UTF-8"));
-            byte[] key = getLongBytes(lconvert, longbuf, hashVal);
+            setLongBytes(klconvert, klongbuf, hashVal);
+            byte[] key = klconvert.array();
 
             if (!already.contains(hashVal)) {
               hf.add(key, value);
@@ -111,17 +109,8 @@ public class mkhf2 {
     log.info(j + " done.");
   }
 
-  private static byte[] getIntBytes(final ByteBuffer convert, final IntBuffer intbuf, int value) {
-    intbuf.rewind();
-    intbuf.put(value);
-
-    return convert.array();
-  }
-
-  private static byte[] getLongBytes(final ByteBuffer convert, final LongBuffer longbuf, long value) {
+  private static void setLongBytes(final ByteBuffer convert, final LongBuffer longbuf, long value) {
     longbuf.rewind();
     longbuf.put(value);
-
-    return convert.array();
   }
 }
