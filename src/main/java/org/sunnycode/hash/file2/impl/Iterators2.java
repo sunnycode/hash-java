@@ -252,7 +252,7 @@ public class Iterators2 {
 
                 if (entrySize < FileOperations2.RANDOM_READ_BUFFER_LENGTH) {
                   // if the hash entry fits in our buffer, things are faster
-                  fileBytes.position(keySize.getSize() + valueSize.getSize());
+                  fileBytes.position(keySize.getSize() + (!isPrimitive ? valueSize.getSize() : 0));
                   fileBytes.get(probedKey);
 
                   if (!isAssociative && !Arrays.equals(key, probedKey)) {
@@ -264,7 +264,7 @@ public class Iterators2 {
                 } else {
                   synchronized (hashFile) {
                     hashFile.seek(entryPositionAlreadyAtProbeLocation + keySize.getSize()
-                        + valueSize.getSize());
+                        + (!isPrimitive ? valueSize.getSize() : 0));
                     hashFile.readFully(probedKey);
 
                     if (!isAssociative && !Arrays.equals(key, probedKey)) {
